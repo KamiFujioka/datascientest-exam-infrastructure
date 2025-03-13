@@ -1,0 +1,176 @@
+stages:
+  - plan
+  - apply
+  - deploy
+  - destroy
+
+variables:
+  PRODUCTION_BRANCH_NAME: "production"
+  STAGING_BRANCH_NAME: "staging"
+  TF_PATH: "terraform"
+
+.init:
+  image:
+    entrypoint: [""]
+    name: "hashicorp/terraform:latest"
+  before_script:
+    - cd ${TF_PATH}
+    - echo "Will launch job for env $ENV"
+    - if [[ "$ENV" == "staging" ]]; then export TF_STATE_BUCKET=$TF_STATE_BUCKET_STAGING; fi
+    - if [[ "$ENV" == "production" ]]; then export TF_STATE_BUCKET=$TF_STATE_BUCKET_STAGING; fi
+    - echo -e "bucket = \"$TF_STATE_BUCKET\"" >> backend
+    - echo -e "key    = \"$ENV/$ENV\"" >> backend
+    - echo -e "region = \"$AWS_REGION\"" >> backend
+    - terraform init -backend-config=backend -reconfigure -input=false
+
+.plan:
+  stage: plan
+  extends: .init
+  environment:
+    name: ${ENV}
+    action: start
+  script:
+    - terraform validate
+    - terraform plan -input=false -out=plan-${ENV}.cache -var-file=vars/${ENV}.tfvars
+  artifacts:
+    paths:
+      - ${TF_PATH}/plan-${ENV}.cache
+
+.apply:
+  stage: apply
+  extends: .init
+  resource_group: ${ENV}
+  environment:
+    name: ${ENV}
+    action: start
+  script:
+    - terraform apply -input=false plan-${ENV}.cache
+    - terraform output -raw kubeconfig > kubeconfig
+    - sed -i 's/client.authentication.k8s.io\/v1alpha1/client.authentication.k8s.io\/v1beta1/g' kubeconfig
+    - ls -la
+
+  artifacts:
+    paths:
+      - terraform/kubeconfig
+    expire_in: 1 hour
+
+.deploy_helm:
+  stage: deploy
+  image: dtzar/helm-kubectl:latest
+  variables:
+    KUBECONFIG: "$CI_PROJECT_DIR/.kube/config"
+  dependencies:
+    - apply_staging
+    - apply_production
+  script:
+    - rm -rf .kube
+    - mkdir -p .kube
+    - cp /root/.kube/config .kube/config
+    - cd monitoring-chart
+    - helm dependency build
+    - helm upgrade --install monitoring . --namespace monitoring --create-namespace
+    - cd ../webapp-chart
+    - helm upgrade --install webapp . --namespace webapp --create-namespace
+
+.destroy_terraform:
+  stage: destroy
+  extends: .init
+  resource_group: ${ENV}
+  environment:
+    name: ${ENV}
+    action: stop
+  script:
+    - terraform refresh -input=false -var-file=vars/${ENV}.tfvars
+    - terraform destroy -auto-approve -var-file=vars/${ENV}.tfvars
+
+.destroy_helm:
+  stage: destroy
+  image: dtzar/helm-kubectl:latest
+  variables:
+    KUBECONFIG: "$CI_PROJECT_DIR/.kube/config"
+  script:
+    - rm -rf .kube
+    - mkdir -p .kube
+    - cp /root/.kube/config .kube/config
+    - helm uninstall monitoring -n monitoring
+    - helm uninstall webapp -n webapp
+
+plan_staging:
+  extends: .plan
+  variables:
+    TF_ROOT: $TF_PATH
+    ENV: staging
+  rules:
+    - if: $CI_COMMIT_BRANCH == $STAGING_BRANCH_NAME
+
+plan_production:
+  extends: .plan
+  variables:
+    TF_ROOT: $TF_PATH
+    ENV: production
+  rules:
+    - if: $CI_COMMIT_BRANCH == $PRODUCTION_BRANCH_NAME
+
+apply_staging:
+  extends: .apply
+  needs:
+    - plan_staging
+  variables:
+    TF_ROOT: $TF_PATH
+    ENV: staging
+  rules:
+    - if: $CI_COMMIT_BRANCH == $STAGING_BRANCH_NAME
+
+apply_production:
+  extends: .apply
+  needs:
+    - plan_production
+  variables:
+    TF_ROOT: $TF_PATH
+    ENV: production
+  rules:
+    - if: $CI_COMMIT_BRANCH == $PRODUCTION_BRANCH_NAME
+
+deploy_staging:
+  extends: .deploy_helm
+  rules:
+    - if: $CI_COMMIT_BRANCH == $STAGING_BRANCH_NAME
+
+deploy_production:
+  extends: .deploy_helm
+  rules:
+    - if: $CI_COMMIT_BRANCH == $PRODUCTION_BRANCH_NAME
+
+destroy_deployment_staging:
+  stage: .destroy_helm
+  when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == $STAGING_BRANCH_NAME
+
+destroy_deployment_production:
+  stage: .destroy_helm
+  when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == $PRODUCTION_BRANCH_NAME
+
+destroy_terraform_staging:
+  needs: []
+  variables:
+    ENV: staging
+    TF_ROOT: $TF_PATH
+  extends: .destroy_terraform
+  when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == $STAGING_BRANCH_NAME
+
+destroy_terraform_production:
+  needs: []
+  variables:
+    ENV: staging
+    TF_ROOT: $TF_PATH
+  extends: .destroy_terraform
+  when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == $PRODUCTION_BRANCH_NAME
+
+
