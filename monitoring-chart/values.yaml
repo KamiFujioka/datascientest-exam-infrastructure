@@ -1,0 +1,47 @@
+namespace: monitoring
+
+rbac:
+  create: true
+
+prometheus:
+  enabled: true
+  prometheusSpec:
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+          storageClassName: "gp2"
+
+alertmanager:
+  enabled: true
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+        storageClassName: "gp2"
+
+grafana:
+  enabled: true
+  adminPassword: "admin"
+
+loki:
+  enabled: true
+  image:
+    repository: grafana/loki
+    tag: "2.8.2"
+  persistence:
+    enabled: true
+    storageClassName: "gp2"
+    size: 10Gi
+
+promtail:
+  enabled: true
+  image:
+    repository: grafana/promtail
+    tag: "2.8.2"

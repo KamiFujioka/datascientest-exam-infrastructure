@@ -1,0 +1,6 @@
+apiVersion: v2
+name: webapp-chart
+description: "Chart Helm pour déployer une webapp Python avec autoscaling et RBAC dans un namespace dédié."
+type: application
+version: 0.1.0
+appVersion: "1.0"

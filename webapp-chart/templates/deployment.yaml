@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-app
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.webapp.replicas }}
+  selector:
+    matchLabels:
+      app: python-app
+  template:
+    metadata:
+      labels:
+        app: python-app
+    spec:
+      serviceAccountName: {{ .Values.rbac.serviceAccountName }}
+      containers:
+        - name: python-app
+          image: {{ .Values.webapp.image }}
+          ports:
+            - containerPort: {{ .Values.webapp.port }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.webapp.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.webapp.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 20

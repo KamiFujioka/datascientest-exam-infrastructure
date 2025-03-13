@@ -1,0 +1,13 @@
+apiVersion: v2
+name: monitoring-chart
+description: "Chart Helm pour déployer une stack de monitoring complète (Prometheus, Alertmanager, Grafana, Loki et Promtail) dans un namespace dédié."
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: kube-prometheus-stack
+    version: "45.6.0"
+    repository: "https://prometheus-community.github.io/helm-charts"
+  - name: loki-stack
+    version: "2.8.2"
+    repository: "https://grafana.github.io/helm-charts"

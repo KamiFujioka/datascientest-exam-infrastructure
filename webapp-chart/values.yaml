@@ -1,0 +1,16 @@
+
+namespace: webapp
+
+rbac:
+  create: true
+  serviceAccountName: webapp-sa
+
+webapp:
+  replicas: 5
+  image: hisuko/datascientest-exam-pod-ip-displayer:latest
+
+autoscaling:
+  enabled: true
+  minReplicas: 5
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 50
